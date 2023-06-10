@@ -17,12 +17,14 @@
 import importlib.util
 import subprocess
 import sys
-from typing import Optional
+from typing import Iterable, List, Optional, Union
 
 from autohooks.api import error, ok, out
 from autohooks.api.git import get_staged_status, stash_unstaged_changes
 from autohooks.config import Config
 from autohooks.precommit.run import ReportProgress
+
+DEFAULT_ARGUMENTS = []
 
 
 def check_ruff_installed() -> None:
@@ -30,6 +32,28 @@ def check_ruff_installed() -> None:
         raise RuntimeError(
             "Could not find ruff. Please add ruff to your python environment"
         )
+
+
+def get_ruff_config(config: Config) -> Config:
+    return config.get("tool", "autohooks", "plugins", "ruff")
+
+
+def ensure_iterable(value: Union[str, List[str]]) -> List[str]:
+    if isinstance(value, str):
+        return [value]
+    return value
+
+
+def get_ruff_arguments(config: Optional[Config]) -> Iterable[str]:
+    if not config:
+        return DEFAULT_ARGUMENTS
+
+    ruff_config = get_ruff_config(config)
+    arguments = ensure_iterable(
+        ruff_config.get_value("arguments", DEFAULT_ARGUMENTS)
+    )
+
+    return arguments
 
 
 def precommit(
@@ -45,6 +69,8 @@ def precommit(
         ok("No staged files to format.")
         return 0
 
+    cmd = ["ruff", "check"] + get_ruff_arguments(get_ruff_config(config))
+
     if report_progress:
         report_progress.init(len(files))
 
@@ -53,7 +79,7 @@ def precommit(
         for file in files:
             try:
                 subprocess.run(
-                    ["ruff", "check", str(file.path)],
+                    cmd + [str(file.path)],
                     check=True,
                     capture_output=True,
                 )
